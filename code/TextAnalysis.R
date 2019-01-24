@@ -7,6 +7,7 @@ library(reshape2)
 library(DataCombine)
 library(purrr)
 library(wordcloud)
+library(emojifont)
 
 # read data 
 msi  <- read.csv("MadeinSI.csv")
@@ -97,7 +98,7 @@ Positive_Words_perTweet <- msi_words %>%
   count(SumPositive)  
 
 # more tweets overly positive or overly negative or tie 
-TweetCategorization <- msi_words %>%
+ msi_words %>%
   inner_join(get_sentiments("bing")) %>%
   group_by(id) %>%
   summarise(SumNegative = sum(sentiment == "negative"), SumPositive = sum(sentiment == "positive")) %>%
@@ -105,9 +106,7 @@ TweetCategorization <- msi_words %>%
     SumNegative > SumPositive ~ "More Negative",
     SumPositive > SumNegative ~ "More Positive",
     SumPositive == SumNegative ~ "Tie"
-  ))
-
-TweetCategorization %>% #f or 943 unique tweets with words that matched dictionary 
+  )) %>% 
   count(OverallSentiment) %>%
   ggplot(aes(x=OverallSentiment, y= n)) +
     geom_bar(stat = "identity", color = "orange", fill = "white") +
@@ -137,18 +136,8 @@ msi_words %>%
   inner_join(get_sentiments("bing")) %>%
   count(word, sentiment, sort = TRUE) %>%
   acast(word ~ sentiment, value.var = "n", fill = 0) %>%
-  comparison.cloud(colors = c("gray20", "gray80"),
-                   max.words = 100)
-
-
-
-
-
-
-
-
-
-
+  comparison.cloud(colors = c("indianred3","lightsteelblue3"),
+                   max.words = 100, random.order = F, title.size=2.5)
 
 
 
@@ -165,7 +154,7 @@ hashtags <- hashtags %>%
   count(hashtags) %>%
   arrange(desc(n))
 
-rm(hashtags)
+rm(hashtags, Negative_Words_perTweet, Positive_Words_perTweet, TweetCategorization)
 
                                   ##### Emoji Analysis #####
 
@@ -176,17 +165,24 @@ emoji_find <- map_df(emoji_find, ~as.data.frame(.x), .id="id")
 #emoji_find <- lapply(emoji_find, function (x) paste(x, collapse = ""))
 #emoji_find <- data.frame(non_words = unlist(emoji_find))
 
+unicode_1 <-  c("\\u2640", "\\u2642")
+unicode_2 <-  c("\\U0001f3fb", "\\U0001f3fc", "\\U0001f3fd","\\U0001f3fe", "\\U0001f3ff")
+unicode_3 <-  c("\\U0001f1ee", "\\U0001f1f9")
+unicode_4 <- c("\\U0001f926", "\\U0001f937")
+
 emoji_find <- emoji_find %>%
   mutate(escape = stringi::stri_escape_unicode(.x)) %>%
-  mutate(special_character = ifelse(escape %in% c("\\u2640", "\\u2642") |
-                                    escape %in% c("\\U0001f3fb", "\\U0001f3fc", "\\U0001f3fd","\\U0001f3fe", "\\U0001f3ff"),
-                                    1,0)) %>%
-  mutate(italian_flag = ifelse(escape %in% c("\\U0001f1ee", "\\U0001f1f9"),1,0)) %>%
+  mutate(special_character = ifelse(escape %in% unicode_1 | escape %in% unicode_2,1,0)) %>%
+  mutate(italian_flag = ifelse(escape %in% unicode_3,1,0)) %>%
   group_by(id) %>%
   mutate(combine = ifelse(special_character==1 & lag(special_character) ==1, 
                           paste(dplyr::lag(escape,2),dplyr::lag(escape,1),"\\u200d",escape, sep = ""), "")) %>%
   mutate(combine = ifelse(special_character==1 & lag(special_character)==0 & lead(special_character, default = 0)==0,
                           paste(dplyr::lag(escape,1),escape, sep = ""), combine)) %>%
+  mutate(combine = ifelse(special_character==1 & lag(special_character)==0& 
+                            lag(escape,1) %in% unicode_4 & 
+                            lead(special_character, default = 0)==0,paste(dplyr::lag(escape,1),
+                            "\\u200d",escape, sep = ""), combine)) %>%
   mutate(combine = ifelse(italian_flag==1 & lag(italian_flag)==1,
                           paste(dplyr::lag(escape,1),escape, sep = ""), combine))
   
@@ -239,17 +235,22 @@ rm(emoji.chars, emoji.descriptions)
 
 #match emojis from tweets with emoji descriptions 
 
+emoji_FINAL$Desc <- emoji_ref$emoji.descriptions[match(emoji_FINAL$`utf-8`,emoji_ref$emoji.chars)]
+emoji_FINAL <- filter(emoji_FINAL, !is.na(Desc))  # only drop 14 
+
+top_8<-emoji_FINAL %>%
+  ungroup() %>%
+  mutate(unescaped = stringi::stri_unescape_unicode(`utf-8`)) %>%
+  count(Desc,unescaped) %>%
+  arrange(desc(n)) %>%
+  top_n(8)
+
+ggplot(aes(x=Desc, y = n), top_8) +
+  geom_bar(stat = 'identity') + 
+  scale_x_discrete(breaks = Desc, labels = unescaped) +
+  coord_flip()
 
 
-
-
-
-
-
-emoji_find %>%
-  count(desc) %>%
-  arrange(desc(n))
-  
 
 
 
